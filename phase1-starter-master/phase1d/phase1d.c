@@ -31,6 +31,9 @@ void startup(int argc, char **argv){
 
     // initialize device data structures
     USLOSS_IntVec[USLOSS_CLOCK_INT] = DeviceHandler;
+    USLOSS_IntVec[USLOSS_ALARM_INT] = DeviceHandler;
+    USLOSS_IntVec[USLOSS_DISK_INT] = DeviceHandler;
+    USLOSS_IntVec[USLOSS_TERM_INT] = DeviceHandler;
     // put DeviceHandler into interrupt vector for the remainingdevices
     
     USLOSS_IntVec[USLOSS_SYSCALL_INT] = SyscallHandler;
@@ -129,14 +132,18 @@ static void DeviceHandler(int type, void *arg) {
 static int Sentinel (void *notused){
     int     pid;
     int     rc;
+    int     hasChild = 1;
 
     /* start the P2_Startup process */
     rc = P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 2, &pid);
     assert(rc == P1_SUCCESS);
 
     // while sentinel has children
+    while(hasChild){
     //      call P1GetChildStatus to get children that have quit 
+
     //      wait for an interrupt via USLOSS_WaitInt
+    }
     USLOSS_Console("Sentinel quitting.\n");
     return 0;
 } /* End of sentinel */
@@ -148,6 +155,7 @@ static int Sentinel (void *notused){
 int P1_Join(int *pid, int *status) {
     int result = P1_SUCCESS;
     int loopCond = 0;
+    int childStatus
     // disable interrupts
     P1DisableInterrupts();
     // check kernel mode
@@ -155,20 +163,20 @@ int P1_Join(int *pid, int *status) {
     // repeat until either a child quit or there are no children
     while(loopCond == 0){
         // child pid & status returned in params
-        P1GetChildStatus(*pid,*status);
+        childStatus = P1GetChildStatus(*pid,*status);
 
         // check for children, if none return none
-        if(status == P1_NO_CHILDREN){
+        if(childStatus == P1_NO_CHILDREN){
             result = P1_NO_CHILDREN;
             loopCond = 1;
         }
         // if there are children but no children have quit
-        if(status == P1_NO_QUIT){
+        if(childStatus == P1_NO_QUIT){
             P1SetState(P1_STATE_JOINING);
             P1Dispatch(FALSE);
         }
         // check if a child has quit
-        if(status == P1_SUCCESS){
+        if(childStatus == P1_SUCCESS){
             loopCond = 1;
         }
     }
