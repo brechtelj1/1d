@@ -16,27 +16,28 @@ static void IllegalInstructionHandler(int type, void *arg);
 
 static int Sentinel(void *arg);
 
-// locks
-Lock CLOCK_LOCK;
-Lock ALARM_LOCK;
-Lock DISK_LOCK;
-Lock TERM_LOCK;
-
 // lock ids
 int CLOCK_ID;
 int ALARM_ID;
-int DISK_ID;
-int TERM_ID;
+int DISK_ID_1;
+int DISK_ID_2;
+int TERM_ID_1;
+int TERM_ID_2;
+int TERM_ID_3;
+int TERM_ID_4;
 
 // condition variables
 int CLOCK_COND;
 int ALARM_COND;
-int DISK_COND;
-int TERM_COND;
+int DISK_COND_1;
+int DISK_COND_2;
+int TERM_COND_1;
+int TERM_COND_2;
+int TERM_COND_3;
+int TERM_COND_4;
 
 // state variables
-static int SHOULD_WAIT = 0;     // wait state var
-static int RUPT_OCCUR = 0;      // records num interrupts 
+static int ABORT_SIGNAL = 0; // signals a device to abort
 
 // 
 void startup(int argc, char **argv){
@@ -53,13 +54,21 @@ void startup(int argc, char **argv){
     // init locks
     P1_CreateLock("clockLock",&CLOCK_ID);
     P1_CreateLock("alarmLock",&ALARM_ID);
-    P1_CreateLock("diskLock",&DISK_ID);
-    P1_CreateLock("termLock",&TERM_ID);
+    P1_CreateLock("diskLock1",&DISK_ID_1);
+    P1_CreateLock("diskLock2",&DISK_ID_2);
+    P1_CreateLock("termLock1",&TERM_ID_1);
+    P1_CreateLock("termLock2",&TERM_ID_2);
+    P1_CreateLock("termLock3",&TERM_ID_3);
+    P1_CreateLock("termLock4",&TERM_ID_4);
     // init condition variables
     P1_CondCreate("clockCond",CLOCK_ID,&CLOCK_COND);
     P1_CondCreate("alarmCond",ALARM_ID,&ALARM_COND);
-    P1_CondCreate("diskCond",DISK_ID,&DISK_COND);
-    P1_CondCreate("termCond",TERM_ID,&TERM_COND);
+    P1_CondCreate("diskCond1",DISK_ID_1,&DISK_COND_1);
+    P1_CondCreate("diskCond2",DISK_ID_2,&DISK_COND_2);
+    P1_CondCreate("termCond1",TERM_ID_1,&TERM_COND_1);
+    P1_CondCreate("termCond2",TERM_ID_2,&TERM_COND_2);
+    P1_CondCreate("termCond3",TERM_ID_3,&TERM_COND_3);
+    P1_CondCreate("termCond4",TERM_ID_4,&TERM_COND_4);
     // set up syscall
     USLOSS_IntVec[USLOSS_SYSCALL_INT] = SyscallHandler;
     /* create the sentinel process */
@@ -71,39 +80,26 @@ void startup(int argc, char **argv){
 } /* End of startup */
 
 // causes P1_DeviceWait to return P1_WAIT_ABORTED
+// NOTE: Testing 1 signal variable, if that doesn't work
+// make a signal variable for all types and their units
 int P1_DeviceAbort(int type,int unit){
     int result = P1_SUCCESS;
+    int lockId;
+    int condId;
     // check for invalid units or types
-    switch(type){
-        case USLOSS_CLOCK_DEV:
-            if(unit != 0) result = P1_INVALID_UNIT;
-            break;
-        case USLOSS_ALARM_DEV:
-            if(unit != 0) result = P1_INVALID_UNIT;
-            break;
-        case USLOSS_DISK_DEV:
-            if(unit != 0 || unit != 1) result = P1_INVALID_UNIT;
-            break;
-        case USLOSS_TERM_DEV:
-        if(unit < 0 || unit > 3) result = P1_INVALID_UNIT;
-            break;
-        default:
-            result = P1_INVALID_TYPE;
-    }
+    result = GetLockAndCond(type, unit, &lockId, &condId);
+    // TODO: Set global signal for device to abort
+    ABORT_SIGNAL = 1;
+    // TODO: NakedSignal waiting device
+    P1_NakedSignal(condId);
     return result;
 }
 
-// makes the device wait for interrupt or an abort
-int P1_DeviceWait(int type, int unit, int *status) {
+// This function gets the lock id and condition id based on the type
+// of device and the unit number for that device
+int GetLockAndCond(int type, int unit, int *lockId, int *condId){
     int result = P1_SUCCESS;
-    int aborted = 0;
-    int lockId;
-    int condId;
-    // disable interrupts
-    P1DisableInterrupts();
-    // check kernel mode
-    CHECKKERNEL();
-    // check type and unit 
+
     switch(type){
         case USLOSS_CLOCK_DEV:
             if(unit != 0) result = P1_INVALID_UNIT;
@@ -116,18 +112,52 @@ int P1_DeviceWait(int type, int unit, int *status) {
             condId = ALARM_COND;
             break;
         case USLOSS_DISK_DEV:
-            if(unit != 0 || unit != 1) result = P1_INVALID_UNIT;
-            lockId = DISK_ID;
-            condId = DISK_COND;
+            if(unit == 0){ 
+                lockId = DISK_ID_1; 
+                condId = DISK_COND_1;
+            }
+            else if(unit == 1){
+                lockId = DISK_ID_2;
+                condId = DISK_COND_2;
+            }
+            else{ result = P1_INVALID_UNIT;}
             break;
         case USLOSS_TERM_DEV:
-            if(unit < 0 || unit > 3) result = P1_INVALID_UNIT;
-            lockId = TERM_ID;
-            condId = TERM_COND;
+            if(unit == 0){ 
+                lockId = TERM_ID_1; 
+                condId = TERM_COND_1;
+            }
+            else if(unit == 1){
+                lockId = TERM_ID_2;
+                condId = TERM_COND_2;
+            }
+            else if(unit == 2){
+                lockId = TERM_ID_3;
+                condId = TERM_COND_3;
+            }
+            else if(unit == 3){
+                lockId = TERM_ID_3;
+                condId = TERM_COND_3;
+            }
+            else{ result = P1_INVALID_UNIT;}
             break;
         default:
             result = P1_INVALID_TYPE;
     }
+    return result;
+}
+// makes the device wait for interrupt or an abort
+int P1_DeviceWait(int type, int unit, int *status) {
+    int result = P1_SUCCESS;
+    int aborted = 0;
+    int lockId;
+    int condId;
+    // disable interrupts
+    P1DisableInterrupts();
+    // check kernel mode
+    CHECKKERNEL();
+    // check type and unit 
+    result = GetLockAndCond(type, unit, &lockId, &condId);
     // ensure no errors have occured
     if(result != P1_SUCCESS){
         P1EnableInterrupts();
@@ -142,8 +172,9 @@ int P1_DeviceWait(int type, int unit, int *status) {
         P1_Wait(condId);
 
         // abort
-        if(){
+        if(ABORT_SIGNAL == 1){
             result = P1_WAIT_ABORTED;
+            ABORT_SIGNAL = 0;
         }
     }
     // if not aborted
@@ -160,44 +191,32 @@ int P1_DeviceWait(int type, int unit, int *status) {
 
 // handles devices, type unit, etc. calls naked signal to wake up
 // the related device
+// NOTE: arg is the unit number
 static void DeviceHandler(int type, void *arg) {
     int wakeupClock = 5;
-    int wakeupHanlder = 4;
+    int wakeupHandler = 4;
     static int clockRupt = 0;                      
-    // maybe TODO record that interrupt occurred
-    RUPT_OCCUR++;
-
+    int unit = *(int *)arg;
+    int result;
+    int lockId;
+    int condId;
     // TODO save device status
 
-
+    result = GetLockAndCond(type, unit, &lockId, &condId);
     // if clock device   NOTE: completely unsure what this is
-    if(USLOSS_CLOCK_DEV){
-
+    if(type == USLOSS_CLOCK_DEV){
+        clockRupt++;
         // wake up handler every 4 ticks or 80 milliseconds
-        if(clockRupt == wakeupHanlder){
+        if(clockRupt % wakeupHandler == 0){
             P1Dispatch(TRUE);
         }
         // wake up device every 5 ticks or 100 milliseconds
-        if(clockRupt == wakeupHanlder){
-            // TODO wakeup device
+        if(clockRupt % wakeupClock == 0){
+            P1_NakedSignal(condId);
         }
     }
     // else naked signal type:unit    (Types & units listed in USLOSS.h)
-    else{
-        // NOTE: Conflated naming convention on type, unsure usage
-        if(type == USLOSS_CLOCK_DEV){
-            P1_NakedSignal(USLOSS_CLOCK_DEV:1);
-        }
-        if(type == USLOSS_ALARM_DEV){
-            P1_NakedSignal(USLOSS_ALARM_DEV:1);
-        }
-        if(type == USLOSS_DISK_DEV){
-            P1_NakedSignal(USLOSS_DISK_DEV:2);
-        }
-        if(type == USLOSS_TERM_DEV){
-            P1_NakedSignal(USLOSS_TERM_DEV:4);
-        }
-    }
+    P1_NakedSignal(condId);
 }
 
 // invoked when USLOSS starts up. inits all of phase1
