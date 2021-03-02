@@ -189,18 +189,16 @@ int P1_DeviceWait(int type, int unit, int *status) {
         // wait
         check = P1_Wait(condId);
         if(check != P1_SUCCESS) printf("not success\n");
-        
-        printf("check = %d\n",check);
-
-        // TODO aborts must be specific to device type, same with interrupts
-        if(ABORT_SIGNAL == 1){
+        // device was aborted
+        if(ABORT_SIGNAL >= 1){
             printf("aborting");
             result = P1_WAIT_ABORTED;
-            ABORT_SIGNAL = 0;
+            ABORT_SIGNAL--;
             return result;
         }
         // interrupt has occured
-        if(RUPT_OCCUR == 1){
+        if(RUPT_OCCUR >= 1){
+            RUPT_OCCUR--;
             break;
         }
     }
@@ -225,7 +223,8 @@ static void DeviceHandler(int type, void *arg) {
     int condId;
     int check;
 
-    RUPT_OCCUR++;
+    // uncomment if changes break code
+    //RUPT_OCCUR++;
 
     // save device status
     DEVICE_STATUS = GetLockAndCond(type, unit, &lockId, &condId);
@@ -241,12 +240,14 @@ static void DeviceHandler(int type, void *arg) {
         }
         // wake up device every 5 ticks or 100 milliseconds
         if(CLOCK_RUPT % wakeupClock == 0){
+            RUPT_OCCUR++;
             check = P1_NakedSignal(condId);
             if(check != P1_SUCCESS) return;
         }
     }
     else{
         // else naked signal type:unit    (Types & units listed in USLOSS.h)
+        RUPT_OCCUR++;
         check = P1_NakedSignal(condId);
         if(check != P1_SUCCESS) return;
     }
